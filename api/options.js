@@ -1,23 +1,35 @@
 export default async function handler(req, res) {
-  const { symbol = "AAPL", date } = req.query;
+  const { symbol = "AAPL" } = req.query;
 
-  const url = `https://apidojo-yahoo-finance-v1.p.rapidapi.com/stock/v3/get-options?symbol=${symbol}${date ? `&date=${date}` : ''}`;
+  const headers = {
+    "X-RapidAPI-Key": process.env.RAPIDAPI_KEY,
+    "X-RapidAPI-Host": process.env.RAPIDAPI_HOST,
+  };
 
   try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "X-RapidAPI-Key": process.env.RAPIDAPI_KEY,
-        "X-RapidAPI-Host": process.env.RAPIDAPI_HOST,
-      },
-    });
+    // Step 1: Fetch expiration dates
+    const expResp = await fetch(
+      `https://apidojo-yahoo-finance-v1.p.rapidapi.com/stock/v3/get-options?symbol=${symbol}`,
+      { headers }
+    );
+    const expData = await expResp.json();
+    const expiration = expData.optionExpirationDates?.[0];
 
-    const data = await response.json();
+    if (!expiration) {
+      return res.status(404).json({ error: "No expirations found for symbol" });
+    }
+
+    // Step 2: Fetch options chain for that expiration
+    const chainResp = await fetch(
+      `https://apidojo-yahoo-finance-v1.p.rapidapi.com/stock/v3/get-options?symbol=${symbol}&date=${expiration}`,
+      { headers }
+    );
+    const chainData = await chainResp.json();
 
     const result = {
-      calls: data.options?.[0]?.calls || [],
-      puts: data.options?.[0]?.puts || [],
-      expirationDate: data.options?.[0]?.expirationDate || null,
+      calls: chainData.options?.[0]?.calls || [],
+      puts: chainData.options?.[0]?.puts || [],
+      expirationDate: expiration,
     };
 
     res.status(200).json(result);
